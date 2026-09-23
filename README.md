@@ -220,7 +220,7 @@ Akun dummy digunakan hanya untuk development dan demonstrasi.
 
 ```text
 Email   : demo@duitku.test
-Password: ditentukan oleh PM dan tidak disimpan dalam repository
+Password: test123
 ```
 
 Akun dapat dibuat melalui halaman registrasi aplikasi. Jika aplikasi belum tersedia, PM dapat membuatnya melalui **Supabase Dashboard → Authentication → Users → Add user** dan mengaktifkan auto-confirm untuk akun uji.
