@@ -1,21 +1,53 @@
 "use client";
 
-import { deleteTransaction } from "@/lib/actions/transactions";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-export function DeleteTransactionButton({ id }: { id: string }) {
+type Props = {
+  id: string;
+  onDeleted?: (id: string) => void;
+  onError?: (message: string) => void;
+};
+
+export function DeleteTransactionButton({ id, onDeleted, onError }: Props) {
+  const router = useRouter();
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  async function handleDelete() {
+    if (!window.confirm("Hapus transaksi ini? Tindakan ini tidak dapat dibatalkan.")) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete_failed");
+
+      if (onDeleted) {
+        onDeleted(id);
+      } else {
+        router.refresh();
+      }
+    } catch {
+      const message = "Gagal menghapus transaksi. Coba lagi.";
+      if (onError) {
+        onError(message);
+      } else {
+        window.alert(message);
+      }
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   return (
-    <form
-      action={deleteTransaction}
-      onSubmit={(event) => {
-        if (!confirm("Hapus transaksi ini? Tindakan ini tidak dapat dibatalkan.")) {
-          event.preventDefault();
-        }
-      }}
+    <button
+      type="button"
+      onClick={handleDelete}
+      disabled={isDeleting}
+      className="text-sm font-medium text-red-600 hover:underline disabled:opacity-50 dark:text-red-400"
     >
-      <input type="hidden" name="id" value={id} />
-      <button type="submit" className="text-sm font-medium text-red-600 hover:underline dark:text-red-400">
-        Hapus
-      </button>
-    </form>
+      {isDeleting ? "Menghapus..." : "Hapus"}
+    </button>
   );
 }
