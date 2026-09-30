@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Transaction } from "@/lib/transactions";
+import { MonthlyBudgetCard } from "@/components/budget/MonthlyBudgetCard";
 import { SummaryCards } from "./SummaryCards";
 import {
   DEFAULT_FILTER,
@@ -162,11 +163,7 @@ export function DashboardClient({ initialTransactions }: { initialTransactions: 
         isLoading={isLoading}
       />
 
-      {/*
-        Slot Programmer 3: render <MonthlyBudgetCard key={budgetRefreshTrigger} />
-        inside this div. It stays hidden while empty.
-      */}
-      <div id="monthly-budget-slot" data-refresh-key={budgetRefreshTrigger} className="empty:hidden" />
+      <MonthlyBudgetCard key={budgetRefreshTrigger} />
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
