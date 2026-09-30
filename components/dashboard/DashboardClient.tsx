@@ -10,7 +10,7 @@ import {
   type TransactionFilterState,
 } from "./TransactionFilter";
 import { TransactionList } from "./TransactionList";
-import { TransactionModal } from "./TransactionModal";
+import { TransactionModal, readApiError } from "./TransactionModal";
 
 type Summary = {
   totalIncome: number;
@@ -85,7 +85,11 @@ export function DashboardClient({ initialTransactions }: { initialTransactions: 
         router.push("/login");
         return;
       }
-      if (!res.ok) throw new Error("fetch_failed");
+      if (!res.ok) {
+        const message = await readApiError(res, "Gagal memuat transaksi. Coba lagi.");
+        if (requestId === latestRequest.current) notify("error", message);
+        return;
+      }
 
       const data: TransactionsResponse = await res.json();
       if (requestId !== latestRequest.current) return;

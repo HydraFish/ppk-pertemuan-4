@@ -19,20 +19,38 @@ function todayLocal() {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-async function readErrorMessage(res: Response) {
+const ERROR_CODE_MESSAGES: Record<string, string> = {
+  unauthorized: "Sesi kamu berakhir. Silakan masuk lagi.",
+  not_found: "Transaksi tidak ditemukan. Muat ulang halaman lalu coba lagi.",
+  invalid_body: "Data yang dikirim tidak valid.",
+  unsupported_media_type: "Format data yang dikirim tidak didukung.",
+  validation: "Periksa kembali data yang kamu masukkan.",
+};
+
+// The API answers with `{ error: "<code>" | "<pesan>", details?: { field: pesan } }`.
+// Codes are mapped to Indonesian text; validation details are shown as-is.
+export async function readApiError(res: Response, fallback: string) {
   try {
     const body: unknown = await res.json();
     if (body && typeof body === "object") {
-      const { error, message } = body as { error?: unknown; message?: unknown };
-      if (typeof error === "string") return error;
-      if (typeof message === "string") return message;
+      const { error, details } = body as { error?: unknown; details?: unknown };
+
+      if (error === "validation" && details && typeof details === "object") {
+        const messages = Object.values(details).filter(
+          (value): value is string => typeof value === "string",
+        );
+        if (messages.length > 0) return messages.join(" ");
+      }
+
+      if (typeof error === "string") {
+        if (ERROR_CODE_MESSAGES[error]) return ERROR_CODE_MESSAGES[error];
+        if (!/^[a-z_]+$/.test(error)) return error;
+      }
     }
   } catch {
-    // body was not JSON; fall through to the status-based message
+    // body was not JSON; use the fallback below
   }
-  if (res.status === 400 || res.status === 422) return "Periksa kembali data yang kamu masukkan.";
-  if (res.status === 401) return "Sesi kamu berakhir. Silakan masuk lagi.";
-  return "Gagal menyimpan transaksi. Coba lagi.";
+  return fallback;
 }
 
 export function TransactionModal({ isOpen, onClose, editingTransaction, onSuccess }: Props) {
@@ -117,7 +135,7 @@ function ModalForm({
       );
 
       if (!res.ok) {
-        setError(await readErrorMessage(res));
+        setError(await readApiError(res, "Gagal menyimpan transaksi. Coba lagi."));
         return;
       }
 

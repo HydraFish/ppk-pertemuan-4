@@ -60,7 +60,9 @@ const fieldClass =
 
 export function TransactionFilter({ filter, onChange, onReset }: Props) {
   const uid = useId();
-  const [currentYear] = useState(() => new Date().getFullYear());
+  const [today] = useState(() => new Date());
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
   const [categoryInput, setCategoryInput] = useState(filter.category);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -93,12 +95,16 @@ export function TransactionFilter({ filter, onChange, onReset }: Props) {
     }, CATEGORY_DEBOUNCE_MS);
   }
 
+  // The API only accepts month and year together, so the two selects are
+  // coupled: picking one fills the other, clearing one clears both.
   function handleMonthChange(month: number) {
-    emit({ month, year: month > 0 && filter.year === 0 ? currentYear : filter.year });
+    if (month === 0) return emit({ month: 0, year: 0 });
+    emit({ month, year: filter.year || currentYear });
   }
 
   function handleYearChange(year: number) {
-    emit({ year, month: year === 0 ? 0 : filter.month });
+    if (year === 0) return emit({ month: 0, year: 0 });
+    emit({ year, month: filter.month || currentMonth });
   }
 
   function handleReset() {
@@ -162,7 +168,7 @@ export function TransactionFilter({ filter, onChange, onReset }: Props) {
             onChange={(event) => handleMonthChange(Number(event.target.value))}
             className={fieldClass}
           >
-            <option value={0}>Semua bulan</option>
+            <option value={0}>Semua periode</option>
             {MONTHS.map((name, index) => (
               <option key={name} value={index + 1}>
                 {name}
@@ -183,7 +189,7 @@ export function TransactionFilter({ filter, onChange, onReset }: Props) {
           >
             {years.map((year) => (
               <option key={year} value={year}>
-                {year === 0 ? "Semua tahun" : year}
+                {year === 0 ? "Semua periode" : year}
               </option>
             ))}
           </select>

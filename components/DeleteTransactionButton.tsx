@@ -21,7 +21,8 @@ export function DeleteTransactionButton({ id, onDeleted, onError }: Props) {
     setIsDeleting(true);
     try {
       const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("delete_failed");
+      // 404 means it is already gone (e.g. deleted from another tab): same end state.
+      if (!res.ok && res.status !== 404) throw new Error("delete_failed");
 
       if (onDeleted) {
         onDeleted(id);
