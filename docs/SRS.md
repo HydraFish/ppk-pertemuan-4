@@ -2,8 +2,8 @@
 
 ## DUITku — Expense Tracker Mahasiswa
 
-**Versi:** 1.0  
-**Status:** Baseline implementasi  
+**Versi:** 2.0  
+**Status:** Implementasi Pertemuan 5 (AJAX & Budget Bulanan)  
 **Platform:** Web  
 **Bahasa antarmuka:** Bahasa Indonesia  
 
@@ -11,7 +11,7 @@
 
 ### 1.1 Tujuan
 
-Dokumen ini mendefinisikan kebutuhan aplikasi web **DUITku**, yaitu aplikasi pencatat keuangan pribadi untuk mahasiswa. Dokumen ini menjadi sumber acuan bagi programmer, reviewer, dan penguji.
+Dokumen ini mendefinisikan kebutuhan aplikasi web **DUITku**, yaitu aplikasi pencatat keuangan pribadi untuk mahasiswa. Dokumen ini menjadi sumber acuan bagi programmer, reviewer, dan penguji pada iterasi Pertemuan 5 (Penambahan AJAX & Fitur Anggaran Bulanan).
 
 ### 1.2 Ruang lingkup
 
@@ -20,10 +20,13 @@ DUITku memungkinkan pengguna untuk:
 - membuat akun, login, dan logout;
 - mempertahankan status login selama session masih berlaku;
 - mencatat pemasukan dan pengeluaran;
-- melihat, mengubah, dan menghapus transaksi miliknya;
-- melihat saldo, total pemasukan, dan total pengeluaran;
+- melihat, mengubah, dan menghapus transaksi miliknya secara asinkron (AJAX) tanpa reload halaman;
+- memfilter riwayat transaksi secara real-time (AJAX) berdasarkan tipe, kategori, dan periode;
+- melihat saldo, total pemasukan, dan total pengeluaran yang terbarui secara dinamis;
+- menetapkan anggaran pengeluaran bulanan (Monthly Budget);
+- memantau persentase dan sisa pemakaian anggaran bulanan berdasarkan transaksi pengeluaran aktual;
 - menyimpan sedikitnya satu preferensi pengguna melalui cookie;
-- memperoleh pemisahan data yang aman antar pengguna.
+- memperoleh pemisahan data yang aman antar pengguna melalui Supabase Row Level Security (RLS).
 
 ### 1.3 Di luar ruang lingkup
 
@@ -31,8 +34,7 @@ Versi ini tidak mencakup:
 
 - akun atau dashboard admin;
 - transaksi bersama atau kolaborasi antarpengguna;
-- anggaran bulanan;
-- target tabungan;
+- target tabungan (savings goals);
 - ekspor PDF/Excel;
 - integrasi rekening bank atau dompet digital;
 - multi-currency;
@@ -181,6 +183,64 @@ Semua perubahan data harus divalidasi pada sisi server. Validasi sisi client bol
 
 Operasi berhasil atau gagal harus menghasilkan pesan yang jelas tanpa membocorkan stack trace, query database, atau kredensial.
 
+### SRS-AJAX-01 — Reaktivitas Dashboard Asinkron
+
+Dashboard harus dapat memperbarui data transaksi dan metrik keuangan (Pemasukan, Pengeluaran, Saldo) secara asinkron (AJAX) tanpa reload halaman penuh (*full page reload*).
+
+Kriteria:
+- Data transaksi dan ringkasan keuangan dapat di-fetch ulang atau dimutasi langsung dari client.
+- Perubahan transaksi (tambah, ubah, hapus) langsung merefleksikan perubahan pada kartu ringkasan keuangan dan widget anggaran secara instan.
+
+### SRS-AJAX-02 — Manajemen Transaksi In-Page / Asinkron
+
+Pengguna dapat menambah, mengedit, dan menghapus transaksi langsung dari tampilan dashboard (misal: modal / in-page drawer / inline form) menggunakan AJAX (`fetch` API).
+
+Kriteria:
+- Menambah transaksi baru tidak menavigasi ke halaman terpisah `/transactions/new`, melainkan menggunakan dialog/modal interaktif yang mengirim request POST ke API.
+- Mengedit transaksi tidak menavigasi ke `/transactions/[id]/edit`, melainkan membuka dialog/modal edit yang mengirim request PUT/PATCH ke API.
+- Menghapus transaksi mengirimkan request DELETE via AJAX setelah dialog konfirmasi, dan baris transaksi langsung terhapus dari tampilan tanpa refresh halaman.
+- Validasi error dan feedback sukses ditampilkan langsung di UI.
+
+### SRS-AJAX-03 — Filter Transaksi Real-time
+
+Pengguna dapat memfilter daftar transaksi secara dinamis dan asinkron (AJAX) tanpa reload halaman.
+
+Kriteria:
+- Filter berdasarkan jenis transaksi: `Semua`, `Pemasukan` (`income`), `Pengeluaran` (`expense`).
+- Filter berdasarkan kategori: memilih kategori tertentu atau semua kategori.
+- Filter berdasarkan periode bulan dan tahun: menampilkan transaksi pada bulan/tahun yang dipilih.
+- Perubahan filter langsung memperbarui daftar riwayat transaksi di dashboard secara asinkron.
+- Menyediakan tombol atau opsi reset filter untuk kembali menampilkan seluruh data.
+
+### SRS-BUDGET-01 — Penetapan Anggaran Bulanan
+
+Pengguna dapat menetapkan atau memperbarui nominal anggaran pengeluaran bulanan (Monthly Budget) untuk bulan dan tahun tertentu.
+
+Kriteria:
+- Nominal anggaran wajib berupa angka positif (> 0).
+- Periode anggaran ditentukan oleh bulan (1–12) dan tahun (misal: 2026).
+- Pengguna hanya memiliki tepat satu nominal anggaran per kombinasi bulan dan tahun (bersifat *upsert* atau *edit* jika sudah ada).
+- Operasi penetapan/pembaruan anggaran dilakukan secara asinkron (AJAX) tanpa reload halaman.
+
+### SRS-BUDGET-02 — Pemantauan & Visualisasi Penggunaan Anggaran
+
+Sistem menyajikan visualisasi pemantauan anggaran terhadap pengeluaran aktual bulan bersangkutan.
+
+Kriteria:
+- Pengeluaran aktual dihitung dari total nominal transaksi dengan `type = 'expense'` pada bulan dan tahun yang bersangkutan.
+- Menampilkan persentase penggunaan: `(total_pengeluaran / target_anggaran) * 100%`.
+- Menampilkan sisa anggaran jika pengeluaran masih berada di bawah target anggaran.
+- Menampilkan indikator visual (progress bar):
+  - **Aman (Hijau)**: Penggunaan < 80%.
+  - **Waspada (Kuning/Oranye)**: Penggunaan 80% – 100%.
+  - **Over-budget (Merah)**: Penggunaan > 100% disertai pesan peringatan bahwa anggaran telah terlampaui beserta selisih nominalnya.
+- Jika pengguna belum menetapkan anggaran pada bulan terkait, sistem menampilkan informasi bahwa anggaran belum diset dan menyediakan tombol untuk menetapkan anggaran.
+- Pembaruan transaksi pengeluaran (tambah/edit/hapus) langsung memicu kalkulasi ulang progres anggaran secara otomatis melalui AJAX.
+
+### SRS-BUDGET-03 — Isolasi & Keamanan Anggaran
+
+Data anggaran bulanan terisolasi ketat per pengguna melalui Row Level Security (RLS) dan verifikasi session pada backend. Pengguna dilarang keras dapat melihat, mengubah, atau menghapus anggaran milik pengguna lain.
+
 ## 5. Aturan Bisnis
 
 1. Setiap transaksi dimiliki tepat oleh satu pengguna.
@@ -193,6 +253,10 @@ Operasi berhasil atau gagal harus menghasilkan pesan yang jelas tanpa membocorka
 8. Tanggal transaksi tidak harus sama dengan tanggal pencatatan.
 9. Seluruh nominal ditampilkan sebagai Rupiah dengan format lokal Indonesia.
 10. Penghapusan transaksi bersifat permanen pada versi ini.
+11. Setiap pengguna hanya dapat menetapkan maksimal 1 nominal anggaran untuk kombinasi bulan dan tahun tertentu.
+12. Nominal target anggaran bulanan harus lebih besar dari nol.
+13. Perhitungan akumulasi pemakaian anggaran bulanan hanya memperhitungkan transaksi pengeluaran (`type = 'expense'`) pada bulan dan tahun bersangkutan milik pengguna tersebut.
+14. Pengguna dilarang mengakses, menetapkan, atau mengubah anggaran pengguna lain.
 
 ## 6. Model Data
 
@@ -221,9 +285,40 @@ Indeks minimal:
 
 `updated_at` harus diperbarui secara otomatis melalui trigger atau secara konsisten dari aplikasi.
 
+### 6.3 Tabel `budgets`
+
+| Kolom | Tipe | Aturan |
+|---|---|---|
+| `id` | `uuid` | Primary key, default `gen_random_uuid()` |
+| `user_id` | `uuid` | Wajib, FK ke `auth.users(id)`, `ON DELETE CASCADE` |
+| `month` | `integer` | Wajib, check `month between 1 and 12` |
+| `year` | `integer` | Wajib, check `year >= 2020` |
+| `amount` | `numeric(14,2)` | Wajib, check lebih besar dari 0 |
+| `created_at` | `timestamptz` | Wajib, default `now()` |
+| `updated_at` | `timestamptz` | Wajib, default `now()` |
+
+Constraint unik & Indeks:
+
+- constraint unik gabungan: `unique (user_id, month, year)`;
+- indeks pada `user_id`;
+- indeks gabungan pada `(user_id, year, month)`.
+
 ## 7. Keamanan Supabase
 
+### 7.1 RLS pada Tabel `transactions`
+
 RLS wajib diaktifkan pada tabel `transactions`.
+
+Kebijakan minimal:
+
+- `SELECT`: pengguna hanya dapat membaca baris dengan `auth.uid() = user_id`;
+- `INSERT`: pengguna hanya dapat membuat baris dengan `auth.uid() = user_id`;
+- `UPDATE`: pengguna hanya dapat memperbarui baris dengan `auth.uid() = user_id` dan hasil akhirnya tetap dimiliki pengguna yang sama;
+- `DELETE`: pengguna hanya dapat menghapus baris dengan `auth.uid() = user_id`.
+
+### 7.2 RLS pada Tabel `budgets`
+
+RLS wajib diaktifkan pada tabel `budgets`.
 
 Kebijakan minimal:
 
@@ -286,40 +381,52 @@ Cookie preferensi tidak boleh berisi data sensitif. Pesan kesalahan tidak boleh 
 
 ## 10. Acceptance Criteria Utama
 
-Produk dianggap memenuhi baseline apabila seluruh skenario berikut berhasil:
+Produk dianggap memenuhi baseline Pertemuan 5 apabila seluruh skenario berikut berhasil:
 
 1. Pengunjung dapat mendaftar dengan data valid.
 2. Pengguna dapat login dan logout.
 3. Refresh dashboard tidak menghilangkan session yang masih valid.
 4. Guest yang membuka dashboard diarahkan ke login.
-5. Pengguna dapat membuat transaksi pemasukan dan pengeluaran.
-6. Pengguna dapat melihat, mengubah, dan menghapus transaksi miliknya.
-7. Total pemasukan, total pengeluaran, dan saldo dihitung dengan benar.
-8. Dua akun yang berbeda tidak dapat melihat atau memanipulasi transaksi satu sama lain.
-9. Input tidak valid ditolak pada sisi server.
-10. Preferensi tema tersimpan dalam cookie dan bertahan setelah refresh.
-11. `.env.local`, secret key, dan password tidak masuk repository.
-12. `npm run lint` dan `npm run build` berhasil tanpa error.
+5. Pengguna dapat membuat transaksi pemasukan dan pengeluaran secara asinkron (AJAX) via modal/in-page form tanpa full page reload.
+6. Pengguna dapat melihat, mengubah, dan menghapus transaksi miliknya secara asinkron (AJAX) tanpa full page reload.
+7. Ringkasan keuangan (Pemasukan, Pengeluaran, Saldo) otomatis terbarui via AJAX saat transaksi bertambah, berubah, atau terhapus.
+8. Pengguna dapat memfilter transaksi (berdasarkan jenis: semua/pemasukan/pengeluaran, kategori, dan periode bulan) secara asinkron tanpa reload halaman.
+9. Pengguna dapat menetapkan dan memperbarui target anggaran bulanan (Monthly Budget) via AJAX.
+10. Dashboard menampilkan visualisasi progres anggaran bulanan (persentase, sisa/kelebihan dana, dan indikator warna Aman/Waspada/Over-budget).
+11. Menambah, mengedit, atau menghapus transaksi pengeluaran langsung memicu pembaruan progres anggaran bulanan secara otomatis via AJAX.
+12. Dua akun yang berbeda tidak dapat melihat atau memanipulasi transaksi maupun anggaran satu sama lain (terisolasi penuh via RLS).
+13. Input tidak valid (nominal <= 0, bulan di luar 1-12, format tanggal keliru) ditolak pada sisi server.
+14. Preferensi tema tersimpan dalam cookie dan bertahan setelah refresh.
+15. `.env.local`, secret key, dan password tidak masuk repository.
+16. `npm run lint` dan `npm run build` berhasil tanpa error.
 
 ## 11. Skenario Uji Isolasi Data Wajib
 
+### 11.1 Isolasi Transaksi
 1. Buat akun A dan akun B.
 2. Login sebagai akun A, lalu buat minimal satu transaksi.
 3. Catat ID transaksi akun A.
 4. Logout dan login sebagai akun B.
-5. Pastikan transaksi akun A tidak muncul pada dashboard akun B.
-6. Coba akses URL edit transaksi akun A menggunakan akun B.
-7. Coba melakukan update dan delete terhadap ID transaksi akun A.
-8. Seluruh percobaan akun B harus gagal atau menghasilkan kondisi tidak ditemukan tanpa membocorkan data akun A.
+5. Pastikan transaksi akun A tidak muncul pada dashboard maupun response API akun B.
+6. Coba akses endpoint GET/PUT/DELETE transaksi akun A menggunakan session akun B.
+7. Seluruh percobaan akun B harus gagal (HTTP 404 / 403) tanpa membocorkan data akun A.
+
+### 11.2 Isolasi Anggaran Bulanan
+1. Login sebagai akun A, tetapkan anggaran bulanan untuk periode bulan tertentu (misal: Rp 1.500.000).
+2. Logout dan login sebagai akun B.
+3. Buka dashboard akun B pada periode bulan yang sama: pastikan anggaran akun A tidak tampil pada akun B (akun B melihat state belum ada anggaran).
+4. Coba lakukan modifikasi atau request data anggaran akun A dengan session akun B melalui manipulasi request API.
+5. Sistem dan RLS Supabase harus memblokir request tersebut dan memastikan data akun A tetap terlindungi.
 
 ## 12. Definition of Done
 
 Sebuah fitur dinyatakan selesai apabila:
 
-- sesuai SRS dan aturan bisnis;
-- memiliki validasi server;
+- sesuai SRS dan seluruh aturan bisnis;
+- memiliki validasi server dan client;
+- seluruh interaksi CRUD, filter, dan budget berjalan asinkron (AJAX) tanpa full page reload;
 - menghormati RLS dan kepemilikan pengguna;
-- memiliki tampilan loading, kosong, berhasil, dan gagal yang relevan;
+- memiliki tampilan loading, kosong, berhasil, dan pesan kesalahan yang relevan;
 - sudah diperiksa melalui lint dan production build;
 - sudah melalui pengujian manual acceptance criteria;
 - tidak menyimpan kredensial di Git;

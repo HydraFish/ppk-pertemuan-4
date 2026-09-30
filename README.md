@@ -9,12 +9,16 @@ Setiap transaksi terhubung dengan akun yang sedang login. Pemisahan data ditegak
 - Registrasi akun menggunakan email dan password.
 - Login dan logout.
 - Session login yang tetap tersedia selama masih berlaku.
-- Dashboard ringkasan keuangan.
-- Menambahkan transaksi pemasukan atau pengeluaran.
-- Melihat riwayat transaksi.
-- Mengubah transaksi milik sendiri.
-- Menghapus transaksi milik sendiri.
-- Pemisahan data antar pengguna menggunakan RLS.
+- Dashboard ringkasan keuangan interaktif berbasis AJAX tanpa reload halaman.
+- Menambahkan transaksi pemasukan atau pengeluaran melalui modal in-page secara asinkron.
+- Melihat riwayat transaksi dengan pembaruan dinamis.
+- Mengubah transaksi milik sendiri secara in-page via AJAX.
+- Menghapus transaksi milik sendiri secara asinkron setelah konfirmasi.
+- Memfilter riwayat transaksi secara real-time berdasarkan jenis, kategori, dan periode.
+- Menetapkan dan mengubah batas anggaran pengeluaran bulanan (Monthly Budget).
+- Memantau penggunaan anggaran dengan progress bar dinamis dan indikator status (Aman, Waspada, Melebihi Anggaran).
+- Sinkronisasi otomatis pemakaian anggaran saat transaksi pengeluaran ditambah, diubah, atau dihapus.
+- Pemisahan data transaksi dan anggaran antar pengguna menggunakan RLS.
 - Preferensi tema `light` atau `dark` yang disimpan dalam cookie.
 - Tampilan responsif untuk ponsel dan desktop.
 
@@ -93,6 +97,52 @@ Sebagai pengguna, saya ingin memilih tema terang atau gelap agar tampilan aplika
 
 Preferensi disimpan melalui cookie `duitku_theme` selama 30 hari.
 
+### US-10 — Manajemen transaksi via AJAX
+
+Sebagai pengguna, saya ingin menambah, mengubah, dan menghapus transaksi langsung dari dashboard melalui dialog modal interaktif tanpa reload halaman.
+
+Kriteria penerimaan:
+
+- Form tambah dan ubah tampil sebagai modal di atas dashboard.
+- Penyimpanan dan pembaruan data dilakukan via request asinkron (`fetch`).
+- Penghapusan transaksi menghapus baris seketika tanpa navigasi halaman.
+- Ringkasan keuangan langsung diperbarui secara otomatis.
+
+### US-11 — Filter transaksi real-time
+
+Sebagai pengguna, saya ingin memfilter riwayat transaksi berdasarkan jenis, kategori, dan periode bulan/tahun secara instan tanpa reload halaman.
+
+Kriteria penerimaan:
+
+- Pilihan filter jenis: Semua, Pemasukan, dan Pengeluaran.
+- Pencarian/pemilihan kategori transaksi.
+- Filter periode bulan dan tahun.
+- Pembaruan filter memuat ulang daftar transaksi secara asinkron via AJAX.
+- Tersedia tombol reset untuk mengembalikan filter ke kondisi awal.
+
+### US-12 — Penetapan anggaran bulanan
+
+Sebagai pengguna, saya ingin menetapkan dan mengubah batas anggaran pengeluaran bulanan agar memiliki batasan belanja yang jelas.
+
+Kriteria penerimaan:
+
+- Pengguna dapat menetapkan target nominal anggaran bulanan (> 0).
+- Periode anggaran ditentukan berdasarkan bulan dan tahun.
+- Penetapan atau pengubahan nominal anggaran dilakukan melalui modal AJAX tanpa reload halaman.
+
+### US-13 — Pemantauan penggunaan anggaran
+
+Sebagai pengguna, saya ingin memantau persentase dan sisa pemakaian anggaran bulanan berdasarkan transaksi pengeluaran aktual.
+
+Kriteria penerimaan:
+
+- Menampilkan nominal target anggaran, pengeluaran aktual, dan sisa anggaran.
+- Menampilkan visual progress bar dengan indikator warna status:
+  - Aman (Hijau) jika penggunaan < 80%;
+  - Waspada (Kuning/Oranye) jika penggunaan 80% – 100%;
+  - Melebihi Anggaran (Merah) jika penggunaan > 100% disertai pesan peringatan selisih defisit.
+- Perubahan transaksi pengeluaran langsung menyinkronkan status anggaran secara otomatis via AJAX.
+
 ## Aturan Bisnis
 
 1. Setiap transaksi dimiliki tepat oleh satu pengguna.
@@ -103,6 +153,10 @@ Preferensi disimpan melalui cookie `duitku_theme` selama 30 hari.
 6. Saldo boleh bernilai negatif.
 7. Seluruh nominal ditampilkan dalam Rupiah Indonesia.
 8. Penghapusan transaksi bersifat permanen pada versi ini.
+9. Setiap pengguna hanya dapat menetapkan maksimal 1 nominal anggaran untuk kombinasi bulan dan tahun tertentu.
+10. Nominal target anggaran bulanan harus lebih besar dari nol.
+11. Perhitungan akumulasi pemakaian anggaran bulanan hanya memperhitungkan transaksi pengeluaran (`type = 'expense'`) pada bulan dan tahun bersangkutan milik pengguna tersebut.
+12. Pengguna hanya dapat membaca, menetapkan, dan mengubah anggaran miliknya sendiri.
 
 Spesifikasi lengkap tersedia pada [docs/SRS.md](docs/SRS.md).
 
@@ -135,7 +189,19 @@ Data keuangan disimpan pada tabel `public.transactions`:
 | `created_at` | Waktu data dibuat |
 | `updated_at` | Waktu terakhir diperbarui |
 
-RLS aktif pada tabel `transactions` dengan policy terpisah untuk operasi `SELECT`, `INSERT`, `UPDATE`, dan `DELETE`. Semua policy hanya berlaku untuk role `authenticated` dan membandingkan `auth.uid()` dengan `user_id`.
+Data anggaran bulanan disimpan pada tabel `public.budgets`:
+
+| Kolom | Keterangan |
+|---|---|
+| `id` | UUID anggaran |
+| `user_id` | Pemilik anggaran, terhubung ke `auth.users` |
+| `month` | Bulan anggaran (1–12) |
+| `year` | Tahun anggaran (>= 2020) |
+| `amount` | Nominal batas anggaran pengeluaran |
+| `created_at` | Waktu data dibuat |
+| `updated_at` | Waktu terakhir diperbarui |
+
+RLS aktif pada tabel `transactions` dan `budgets` dengan policy terpisah untuk operasi `SELECT`, `INSERT`, `UPDATE`, dan `DELETE`. Semua policy hanya berlaku untuk role `authenticated` dan membandingkan `auth.uid()` dengan `user_id`.
 
 ## Prasyarat
 
@@ -201,16 +267,14 @@ Migration database tersedia di folder:
 supabase/migrations/
 ```
 
-Jika Supabase CLI belum digunakan, migration dapat diterapkan secara manual:
+Jika Supabase CLI belum digunakan, migration dapat diterapkan secara berurutan:
 
-1. Buka file migration pembuatan tabel `transactions`.
-2. Buka **Supabase Dashboard → SQL Editor**.
-3. Buat query baru.
-4. Salin isi migration satu kali.
-5. Periksa bahwa query hanya menyentuh objek DUITku.
-6. Klik **Run**.
-7. Pastikan tabel `transactions` tersedia.
-8. Pastikan RLS aktif dan terdapat empat policy ownership.
+1. Buka file migration pembuatan tabel `transactions` (`20260923000000_create_transactions.sql`).
+2. Buka **Supabase Dashboard → SQL Editor**, salin isi query, lalu klik **Run**.
+3. Buka file migration pembuatan tabel `budgets` (`20260930000000_create_budgets.sql`).
+4. Salin isi query, lalu klik **Run**.
+5. Pastikan kedua tabel (`transactions` dan `budgets`) tersedia.
+6. Pastikan RLS aktif dan terdapat empat policy ownership pada masing-masing tabel.
 
 Jangan menjalankan migration yang sama secara bersamaan dari dua perangkat.
 
@@ -246,6 +310,14 @@ Hasil ringkasan yang diharapkan:
 Total pemasukan   : Rp2.000.000
 Total pengeluaran : Rp525.000
 Saldo             : Rp1.475.000
+```
+
+Contoh target anggaran bulanan:
+
+```text
+Target Anggaran   : Rp1.000.000
+Pengeluaran Aktual: Rp525.000
+Sisa Anggaran     : Rp475.000 (Pemakaian 52,5% - Status: Aman)
 ```
 
 Data dummy dapat dimasukkan melalui aplikasi setelah login sebagai akun dummy. Cara ini direkomendasikan karena sekaligus menguji autentikasi, validasi, dan RLS.
@@ -286,23 +358,37 @@ Keduanya harus selesai tanpa error.
 3. Refresh dashboard dan pastikan session tetap tersedia.
 4. Logout dan pastikan dashboard tidak dapat dibuka.
 
-### CRUD transaksi
+### CRUD transaksi via AJAX
 
-1. Tambahkan pemasukan.
-2. Tambahkan pengeluaran.
-3. Pastikan keduanya muncul di riwayat.
-4. Ubah salah satu transaksi.
-5. Hapus salah satu transaksi setelah konfirmasi.
-6. Pastikan ringkasan berubah dengan benar.
+1. Klik tombol **+ Tambah Transaksi** di dashboard dan pastikan modal terbuka tanpa reload halaman.
+2. Tambahkan pemasukan dan pengeluaran.
+3. Pastikan data muncul di riwayat dan kartu ringkasan terupdate seketika.
+4. Klik **Ubah** pada salah satu baris, simpan perubahan, dan pastikan data terupdate di dashboard.
+5. Klik **Hapus** pada salah satu transaksi, konfirmasi dialog, dan pastikan baris terhapus seketika.
+
+### Filter transaksi real-time
+
+1. Ubah filter jenis transaksi menjadi **Pemasukan** atau **Pengeluaran**; pastikan daftar terfilter tanpa reload halaman.
+2. Filter berdasarkan kategori transaksi; pastikan hanya kategori yang cocok yang tampil.
+3. Filter berdasarkan periode bulan dan tahun; pastikan transaksi periode lain disaring.
+4. Klik tombol **Reset**; pastikan filter kembali ke kondisi awal.
+
+### Anggaran bulanan (Monthly Budget)
+
+1. Buka widget Anggaran Pengeluaran Bulanan di dashboard.
+2. Tetapkan target anggaran bulanan melalui modal.
+3. Pastikan progress bar, nominal pengeluaran aktual, dan sisa anggaran tampil dengan warna status yang tepat (Aman, Waspada, Melebihi Anggaran).
+4. Tambahkan transaksi pengeluaran baru; pastikan progres pemakaian anggaran langsung terbarui secara otomatis.
+5. Coba ganti bulan pada kartu anggaran; pastikan anggaran bulan terkait tampil sesuai periode.
 
 ### Isolasi data dan RLS
 
 1. Buat akun A dan akun B.
-2. Login sebagai akun A dan buat transaksi.
+2. Login sebagai akun A, lalu buat transaksi dan tetapkan anggaran bulanan.
 3. Logout, kemudian login sebagai akun B.
-4. Pastikan transaksi akun A tidak terlihat.
-5. Coba akses URL edit transaksi akun A menggunakan akun B.
-6. Pastikan akses ditolak atau data dianggap tidak ditemukan.
+4. Pastikan transaksi dan anggaran akun A tidak terlihat pada dashboard akun B.
+5. Coba manipulasi request API transaksi atau anggaran milik akun A menggunakan session akun B.
+6. Pastikan akses ditolak atau menghasilkan status 404/403.
 
 ### Cookie preferensi
 
@@ -345,11 +431,12 @@ Jangan memasukkan `.env.local`, database password, secret key, atau `service_rol
 
 Status saat README ini disusun:
 
-- Project Next.js tersedia.
-- Dependency Supabase tersedia.
-- Environment lokal PM telah dikonfigurasi.
-- Tabel `transactions` tersedia di Supabase.
-- RLS aktif dengan empat ownership policy.
-- Implementasi antarmuka dan fitur aplikasi telah selesai dan di-merge ke main.
+- Project Next.js 16 App Router dan React 19 berjalan dengan stabil.
+- Dependency Supabase (`@supabase/ssr` dan `@supabase/supabase-js`) terkonfigurasi.
+- Tabel `transactions` dan `budgets` tersedia di Supabase dengan RLS aktif.
+- Dashboard telah mengadopsi 100% AJAX (zero full-page reload).
+- CRUD transaksi in-page modal dan filter real-time telah diimplementasikan.
+- Fitur Anggaran Bulanan (Monthly Budget) dengan visual progress bar dan sinkronisasi otomatis selesai.
+- Pengujian otomatis (`npm run lint` dan `npm run build`) berhasil 100% tanpa error.
+- Seluruh fitur Pertemuan 5 telah selesai dan di-merge ke branch `main`.
 
-Perbarui bagian ini setelah implementasi dan pengujian selesai.
